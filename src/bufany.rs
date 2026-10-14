@@ -866,6 +866,10 @@ impl<'a> Bufany<'a> {
 }
 
 /// A deserialized value
+///
+/// The lifetime `'a` is the lifetime of the serialized input: variable length values
+/// (i.e. bytes and strings) borrow their bytes from it instead of copying them (zero-copy).
+/// When `Value<'a>` is cloned, the clone still borrows the original data.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value<'a> {
     /// Unknown varint (wire type = 0).
