@@ -2,6 +2,7 @@
 name = "anybuf"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.78"
 license = "Apache-2.0"
 description = "A minimal, zero dependency proto3 encoder to encode/decode anything. No schemas needed."
 keywords = ["protobuf3", "protobuf", "proto3", "proto", "encoding"]
