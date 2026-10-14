@@ -846,7 +846,7 @@ impl<'a> Bufany<'a> {
 
     /// Gets the value of the given field number. This returns None if
     /// the field number does not exist
-    pub fn value(&self, field_number: u32) -> Option<Value> {
+    pub fn value(&self, field_number: u32) -> Option<Value<'_>> {
         self.value_ref(field_number).cloned()
     }
 
