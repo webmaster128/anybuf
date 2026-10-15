@@ -20,7 +20,35 @@ enum WireType {
     // I32 = 5,
 }
 
+/// The smallest valid field number.
+const FIELD_NUMBER_MIN: u32 = 1;
+
+/// The largest valid field number (2^29-1).
+///
+/// "The smallest field number you can specify is 1, and the largest is 2^29-1, or 536,870,911"
+/// <https://protobuf.dev/programming-guides/proto3/#assigning-field-numbers>
+const FIELD_NUMBER_MAX: u32 = (1 << 29) - 1;
+
+/// Panics if the field number is outside of the valid range 1 to 2^29-1.
+///
+/// Field numbers outside of this range cannot be encoded correctly in a tag. E.g. 0 is
+/// not a valid field number and 2^29 would silently become field number 0 in the tag.
+///
+/// The range 19000 to 19999 is reserved for the protobuf implementation. Those
+/// field numbers can be encoded just fine and are not rejected here.
+fn check_field_number(field_number: u32) {
+    assert!(
+        (FIELD_NUMBER_MIN..=FIELD_NUMBER_MAX).contains(&field_number),
+        "Invalid field number {field_number}. Must be in range {FIELD_NUMBER_MIN} to {FIELD_NUMBER_MAX}."
+    );
+}
+
 /// A minmal protobuf encoder.
+///
+/// ## Panics
+///
+/// All `append_*` methods panic if the field number is not in the valid range 1 to 2^29-1.
+/// This check also happens when no data is written, e.g. for default values or empty lists.
 #[derive(Default, Clone)]
 pub struct Anybuf {
     output: Vec<u8>,
@@ -45,6 +73,7 @@ impl Anybuf {
 
     /// Appends a bytes field with the given field number.
     pub fn append_bytes(mut self, field_number: u32, data: impl AsRef<[u8]>) -> Self {
+        check_field_number(field_number);
         let data = data.as_ref();
         if data.is_empty() {
             return self;
@@ -89,6 +118,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_uint64(mut self, field_number: u32, value: u64) -> Self {
+        check_field_number(field_number);
         if value == 0 {
             return self;
         }
@@ -227,6 +257,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_uint32(mut self, field_number: u32, data: &[u32]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode((*value).into(), &mut self.output);
@@ -249,6 +280,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_uint64(mut self, field_number: u32, data: &[u64]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode(*value, &mut self.output);
@@ -273,6 +305,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_sint32(mut self, field_number: u32, data: &[i32]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode(to_zigzag32(*value).into(), &mut self.output);
@@ -297,6 +330,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_sint64(mut self, field_number: u32, data: &[i64]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode(to_zigzag64(*value), &mut self.output);
@@ -318,6 +352,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_bool(mut self, field_number: u32, data: &[bool]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode((*value).into(), &mut self.output);
@@ -342,6 +377,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_int32(mut self, field_number: u32, data: &[i32]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode(*value as i64 as u64, &mut self.output);
@@ -366,6 +402,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_int64(mut self, field_number: u32, data: &[i64]) -> Self {
+        check_field_number(field_number);
         for value in data {
             self.append_tag(field_number, WireType::Varint);
             unsigned_varint_encode(*value as u64, &mut self.output);
@@ -409,6 +446,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_string<S: AsRef<str>>(mut self, field_number: u32, data: &[S]) -> Self {
+        check_field_number(field_number);
         for value in data {
             let value = value.as_ref();
             self.append_tag(field_number, WireType::Len);
@@ -455,6 +493,7 @@ impl Anybuf {
     ///     .into_vec();
     /// ```
     pub fn append_repeated_bytes<B: AsRef<[u8]>>(mut self, field_number: u32, data: &[B]) -> Self {
+        check_field_number(field_number);
         for value in data {
             let value = value.as_ref();
             // tag
@@ -492,6 +531,7 @@ impl Anybuf {
         field_number: u32,
         messages: &[M],
     ) -> Self {
+        check_field_number(field_number);
         for message in messages {
             let data = message.as_ref().as_bytes();
             // tag
@@ -549,9 +589,8 @@ impl Anybuf {
     }
 
     fn append_tag(&mut self, field_number: u32, field_type: WireType) {
-        // The top 3 bits of a field number must be unset, ie.e this shift is safe for valid field numbers
-        // "The smallest field number you can specify is 1, and the largest is 2^29-1, or 536,870,911"
-        // https://protobuf.dev/programming-guides/proto3/#assigning-field-numbers
+        // The top 3 bits of a field number must be unset, i.e. this shift is safe for valid field numbers.
+        // The field number was checked with `check_field_number` by the public append method calling this.
         let tag: u32 = (field_number << 3) | field_type as u32;
         unsigned_varint_encode(tag as u64, &mut self.output);
     }
@@ -568,6 +607,7 @@ impl AsRef<Anybuf> for Anybuf {
 mod tests {
     use super::*;
     use hex_literal::hex;
+    extern crate std;
 
     use alloc::string::{String, ToString};
     use alloc::vec;
@@ -1075,5 +1115,106 @@ mod tests {
             serialized,
             b" \xe2\xff\xff\xff\xff\xff\xff\xff\xff\x01 \0 \x11" as &[u8]
         );
+    }
+
+    #[test]
+    fn check_field_number_works() {
+        // valid
+        check_field_number(1);
+        check_field_number(2);
+        check_field_number(15);
+        check_field_number(16);
+        check_field_number(18999);
+        check_field_number(19000); // reserved for the protobuf implementation but valid in the encoding
+        check_field_number(19999);
+        check_field_number(20000);
+        check_field_number(536870910);
+        check_field_number(536870911);
+
+        // invalid
+        for field_number in [0, 536870912, 536870913, 1 << 30, 1 << 31, u32::MAX] {
+            let result = std::panic::catch_unwind(|| check_field_number(field_number));
+            assert!(result.is_err(), "Did not panic for {field_number}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid field number 0. Must be in range 1 to 536870911.")]
+    fn check_field_number_panics_for_zero() {
+        check_field_number(0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid field number 536870912. Must be in range 1 to 536870911.")]
+    fn check_field_number_panics_for_too_large() {
+        check_field_number(536870912);
+    }
+
+    #[test]
+    fn append_works_for_field_number_boundaries() {
+        // Tags of different lengths
+        // echo "big: 1" | protoc --encode=O o.proto | xxd -p (with `int32 big = 536870911;`)
+        let tests: [(u32, &[u8]); 7] = [
+            (1, hex!("0801").as_slice()),
+            (15, hex!("7801").as_slice()), // largest field number with 1 byte tag
+            (16, hex!("800101").as_slice()), // smallest field number with 2 byte tag
+            (2047, hex!("f87f01").as_slice()),
+            (2048, hex!("80800101").as_slice()),
+            (19000, hex!("c0a30901").as_slice()), // reserved range, protoc refuses this in .proto files
+            (536870911, hex!("f8ffffff0f01").as_slice()),
+        ];
+        for (field_number, expected) in tests {
+            let data = Anybuf::new().append_uint64(field_number, 1);
+            assert_eq!(
+                data.into_vec(),
+                expected,
+                "Errored for field number: {field_number}"
+            );
+        }
+    }
+
+    #[test]
+    fn append_panics_for_invalid_field_numbers() {
+        // Every public append method must check the field number, also when nothing is written
+        // (default values and empty lists).
+        let appends: [fn(u32); 23] = [
+            |f| _ = Anybuf::new().append_bytes(f, b"abc"),
+            |f| _ = Anybuf::new().append_bytes(f, b""),
+            |f| _ = Anybuf::new().append_string(f, "abc"),
+            |f| _ = Anybuf::new().append_string(f, ""),
+            |f| _ = Anybuf::new().append_uint64(f, 1),
+            |f| _ = Anybuf::new().append_uint64(f, 0),
+            |f| _ = Anybuf::new().append_uint32(f, 0),
+            |f| _ = Anybuf::new().append_bool(f, false),
+            |f| _ = Anybuf::new().append_sint64(f, 0),
+            |f| _ = Anybuf::new().append_sint32(f, 0),
+            |f| _ = Anybuf::new().append_int64(f, 0),
+            |f| _ = Anybuf::new().append_int32(f, 0),
+            |f| _ = Anybuf::new().append_message(f, &Anybuf::new()),
+            |f| _ = Anybuf::new().append_repeated_uint32(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_uint64(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_sint32(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_sint64(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_bool(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_int32(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_int64(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_string::<&str>(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_bytes::<&[u8]>(f, &[]),
+            |f| _ = Anybuf::new().append_repeated_message::<&Anybuf>(f, &[]),
+        ];
+        for (i, append) in appends.iter().enumerate() {
+            // valid
+            append(1);
+            append(536870911);
+
+            // invalid
+            for field_number in [0, 536870912, u32::MAX] {
+                let result = std::panic::catch_unwind(|| append(field_number));
+                assert!(
+                    result.is_err(),
+                    "Append #{i} did not panic for {field_number}"
+                );
+            }
+        }
     }
 }
