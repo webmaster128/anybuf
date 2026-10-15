@@ -27,3 +27,31 @@ message Collection {
   repeated bytes bytess           = 10 [packed = false];
   repeated Room messages          = 11;
 }
+
+// Field numbers at the boundaries of tag lengths (1 to 5 bytes)
+message VarintTags {
+  uint32 f1         =         1;
+  uint32 f15        =        15;
+  uint32 f16        =        16;
+  uint32 f2047      =      2047;
+  uint32 f2048      =      2048;
+  uint32 f262143    =    262143;
+  uint32 f262144    =    262144;
+  uint32 f33554431  =  33554431;
+  uint32 f33554432  =  33554432;
+  uint32 f536870911 = 536870911;
+}
+
+// Same as VarintTags but with a length-delimited type
+message LenTags {
+  string f1         =         1;
+  string f15        =        15;
+  string f16        =        16;
+  string f2047      =      2047;
+  string f2048      =      2048;
+  string f262143    =    262143;
+  string f262144    =    262144;
+  string f33554431  =  33554431;
+  string f33554432  =  33554432;
+  string f536870911 = 536870911;
+}

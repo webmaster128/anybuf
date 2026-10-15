@@ -1095,20 +1095,70 @@ mod tests {
     }
 
     #[test]
-    fn append_works_for_field_number_boundaries() {
-        // Tags of different lengths
-        // echo "big: 1" | protoc --encode=O o.proto | xxd -p (with `int32 big = 536870911;`)
-        let tests: [(u32, &[u8]); 7] = [
-            (1, hex!("0801").as_slice()),
-            (15, hex!("7801").as_slice()), // largest field number with 1 byte tag
-            (16, hex!("800101").as_slice()), // smallest field number with 2 byte tag
-            (2047, hex!("f87f01").as_slice()),
-            (2048, hex!("80800101").as_slice()),
-            (19000, hex!("c0a30901").as_slice()), // reserved range, protoc refuses this in .proto files
-            (536870911, hex!("f8ffffff0f01").as_slice()),
+    fn append_works_for_multi_byte_tags_varint() {
+        // A tag is (field_number << 3 | wire_type) encoded as varint, i.e. a tag of n bytes
+        // holds field numbers up to 2^(7n-3)-1. Test the field numbers at both sides of each boundary.
+        // for x in 1 15 16 2047 2048 262143 262144 33554431 33554432 536870911; do echo "($x, hex!(\"$(echo "f$x: 1" | protoc --encode=VarintTags tests.proto | xxd -p)\").as_slice()),"; done
+        let tests: [(u32, &[u8]); 10] = [
+            (1, hex!("0801").as_slice()),                 // 1 byte tag
+            (15, hex!("7801").as_slice()),                // 1 byte tag (max)
+            (16, hex!("800101").as_slice()),              // 2 byte tag (min)
+            (2047, hex!("f87f01").as_slice()),            // 2 byte tag (max)
+            (2048, hex!("80800101").as_slice()),          // 3 byte tag (min)
+            (262143, hex!("f8ff7f01").as_slice()),        // 3 byte tag (max)
+            (262144, hex!("8080800101").as_slice()),      // 4 byte tag (min)
+            (33554431, hex!("f8ffff7f01").as_slice()),    // 4 byte tag (max)
+            (33554432, hex!("808080800101").as_slice()),  // 5 byte tag (min)
+            (536870911, hex!("f8ffffff0f01").as_slice()), // 5 byte tag (max field number)
         ];
         for (field_number, expected) in tests {
-            let data = Anybuf::new().append_uint64(field_number, 1);
+            let data = Anybuf::new().append_uint32(field_number, 1);
+            assert_eq!(
+                data.into_vec(),
+                expected,
+                "Errored for field number: {field_number}"
+            );
+
+            // repeated fields use the same tag encoding
+            let data = Anybuf::new().append_repeated_uint32(field_number, &[1]);
+            assert_eq!(
+                data.into_vec(),
+                expected,
+                "Errored for field number: {field_number}"
+            );
+        }
+
+        // The reserved range 19000 to 19999 is valid in the encoding (protoc refuses it in .proto files only)
+        let data = Anybuf::new().append_uint32(19000, 1);
+        assert_eq!(data.into_vec(), hex!("c0a30901"));
+    }
+
+    #[test]
+    fn append_works_for_multi_byte_tags_len() {
+        // Same as append_works_for_multi_byte_tags_varint but with wire type LEN (2) instead of VARINT (0)
+        // for x in 1 15 16 2047 2048 262143 262144 33554431 33554432 536870911; do echo "($x, hex!(\"$(echo "f$x: \"a\"" | protoc --encode=LenTags tests.proto | xxd -p)\").as_slice()),"; done
+        let tests: [(u32, &[u8]); 10] = [
+            (1, hex!("0a0161").as_slice()),                 // 1 byte tag
+            (15, hex!("7a0161").as_slice()),                // 1 byte tag (max)
+            (16, hex!("82010161").as_slice()),              // 2 byte tag (min)
+            (2047, hex!("fa7f0161").as_slice()),            // 2 byte tag (max)
+            (2048, hex!("8280010161").as_slice()),          // 3 byte tag (min)
+            (262143, hex!("faff7f0161").as_slice()),        // 3 byte tag (max)
+            (262144, hex!("828080010161").as_slice()),      // 4 byte tag (min)
+            (33554431, hex!("faffff7f0161").as_slice()),    // 4 byte tag (max)
+            (33554432, hex!("82808080010161").as_slice()),  // 5 byte tag (min)
+            (536870911, hex!("faffffff0f0161").as_slice()), // 5 byte tag (max field number)
+        ];
+        for (field_number, expected) in tests {
+            let data = Anybuf::new().append_string(field_number, "a");
+            assert_eq!(
+                data.into_vec(),
+                expected,
+                "Errored for field number: {field_number}"
+            );
+
+            // repeated fields use the same tag encoding
+            let data = Anybuf::new().append_repeated_string(field_number, &["a"]);
             assert_eq!(
                 data.into_vec(),
                 expected,
