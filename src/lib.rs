@@ -32,6 +32,7 @@ extern crate alloc;
 
 mod anybuf;
 mod bufany;
+mod field_number;
 mod slice_reader;
 mod varint;
 
