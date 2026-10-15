@@ -846,6 +846,21 @@ impl<'a> Bufany<'a> {
 
     /// Gets the value of the given field number. This returns None if
     /// the field number does not exist
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use anybuf::{Anybuf, Bufany, Value};
+    ///
+    /// let serialized = Anybuf::new()
+    ///     .append_uint64(1, 150)
+    ///     .append_string(2, "hello")
+    ///     .into_vec();
+    /// let decoded = Bufany::deserialize(&serialized).unwrap();
+    /// assert_eq!(decoded.value(1), Some(Value::Varint(150)));
+    /// assert_eq!(decoded.value(2), Some(Value::VariableLength(b"hello")));
+    /// assert_eq!(decoded.value(3), None);
+    /// ```
     pub fn value(&self, field_number: u32) -> Option<Value<'_>> {
         self.value_ref(field_number).cloned()
     }
